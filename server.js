@@ -12,13 +12,37 @@ const checkoutRoutes = require('./routes/checkout');
 const userRoutes = require('./routes/user');
 
 const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Connect to MongoDB
+const connectDB = async () => {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log('✅ Connected to MongoDB');
+    } catch (error) {
+        console.error('❌ Failed to connect to MongoDB:', error.message);
+        // On Vercel, we can't really "fallback" to a port, but locally we might
+    }
+};
 
 // Trust proxy (needed for secure cookies behind reverse proxy)
 app.set('trust proxy', 1);
 
 // Middleware
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:3000',
+    'https://supto-dot-dev-client.vercel.app'
+].filter(Boolean);
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(express.json());
@@ -71,34 +95,18 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Connect to MongoDB and start server
-const PORT = process.env.PORT || 5000;
+// Export for Vercel
+module.exports = app;
 
-const startServer = async () => {
-    try {
-        // Connect to MongoDB
-        await mongoose.connect(process.env.MONGODB_URI);
-        console.log('✅ Connected to MongoDB');
-
-        // Start server
+// Execute if running locally
+if (require.main === module) {
+    connectDB().then(() => {
         app.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📍 API URL: http://localhost:${PORT}`);
-            console.log(`🔗 Client URL: ${process.env.CLIENT_URL}`);
         });
-    } catch (error) {
-        console.error('❌ Failed to start server:', error.message);
-
-        // Start server anyway for testing without MongoDB
-        if (process.env.NODE_ENV === 'development') {
-            console.log('⚠️  Starting server without MongoDB connection...');
-            app.listen(PORT, () => {
-                console.log(`🚀 Server running on port ${PORT} (no database)`);
-            });
-        } else {
-            process.exit(1);
-        }
-    }
-};
-
-startServer();
+    });
+} else {
+    // On Vercel, connect immediately
+    connectDB();
+}
